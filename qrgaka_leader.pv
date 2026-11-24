@@ -1,16 +1,6 @@
 (* qrgaka_leader.pv -- S3 leader-mandatory secrecy of the quorum secret S
  * Run: proverif -lib qrgaka_lib.pvl qrgaka_leader.pv
- *
- * Adversary: controls the network, has CORRUPTED ALL members (their ML-KEM keys, PUF sealing keys,
- * shares sigma_i) and has read the leader's NON-VOLATILE memory (MemRead): only the PUF-sealed blob
- * and the public ledger value. The leader's sk_L, sealing key, y_L and sigma_L are NOT given.
- * The honest leader still runs sessions with the adversary-controlled members.
- * Expected: S = rec(yL,y1,y2) stays secret.
- * (No canary query here: the corrupted members legitimately take part in the session and
- *  therefore learn SK; only the quorum secret S must stay hidden.)
- *
- * Negative control (uncomment the marked line): if the leader's (y_L, sigma_L) were stored in
- * the clear (the naive design (ii) of the paper), a memory dump plus the members' shares yields S.
+
  *)
 
 free idL: id.  free id1: id.  free id2: id.
