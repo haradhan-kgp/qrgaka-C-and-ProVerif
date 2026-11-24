@@ -1,16 +1,5 @@
 /*
- * qrgaka.c - Reference implementation of QR-GAKA (Algorithms 2-3 of the paper)
- *
- * Build:  gcc -O2 -Wall qrgaka.c -o qrgaka -loqs -lcrypto
- * Needs:  liboqs >= 0.10 (ML-KEM-768), OpenSSL >= 1.1.1 (HMAC, AES-256-GCM, BIGNUM)
- *
- * What is real:   ML-KEM-768 (liboqs), AES-256-GCM, HMAC-SHA-256 (H_lbl), Shamir over
- *                 F_p with p = 2^521-1, the full message flow M0..M4 with exact sizes,
- *                 PUF-sealing of sk / shares, ledger commitments, epoch refresh, revocation.
- * What is simulated: the PUF (a per-drone secret + HMAC) and the fuzzy extractor/BCH
- *                 (the PUF output is assumed already error-free). Radio is a function call.
- *
- * The program runs a set of positive and negative tests and prints PASS/FAIL.
+ * qrgaka.c -implementation of QR-GAKA
  */
 #include <stdio.h>
 #include <stdlib.h>
