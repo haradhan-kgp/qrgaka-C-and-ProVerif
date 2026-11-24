@@ -3,21 +3,6 @@
  * Run with:
  *   proverif -lib qrgaka_lib.pvl qrgaka_auth.pv      (S1, S2: authentication + forward secrecy)
  *   proverif -lib qrgaka_lib.pvl qrgaka_leader.pv    (S3: leader-mandatory secrecy of S)
- *
- * Abstractions (state these in the paper):
- *  - ML-KEM is an IND-CCA KEM: kss(pk,r) is the secret of encap(pk,r), recoverable only with sk.
- *    Implicit rejection is abstracted: a ciphertext not of the form encap(pk(sk),r) makes decap fail
- *    and the process halts (instead of yielding a pseudorandom key that later fails the MAC/AEAD).
- *  - Every H_lbl is an independent random oracle (free function symbol, no equations).
- *  - AES-GCM is symbolic AEAD with associated data.
- *  - Shamir sharing is abstracted as a constructor rec(yL,y1,y2) with t = 3 (leader + 2 members):
- *    S is derivable only from ALL three points. The information-theoretic Lemma 1 / Theorem 3
- *    cannot be captured symbolically beyond this and stays a paper proof.
- *  - The PUF: each drone has a private sealing key ks_x; sealed state is senc(...,ks_x,..) and can be
- *    opened only inside the drone's own process. The ML-KEM secret key is passed to the process
- *    already unsealed (sealing of sk_x is not re-modelled; it is modelled for the shares).
- *  - The ledger is modelled as public read-only data (kappa) and the leader's public-key directory
- *    as process parameters (so revocation = absence from the directory).
  *)
 
 free c: channel.
