@@ -1,0 +1,52 @@
+(* qrgaka_auth.pv -- S1 (injective mutual authentication) and S2 (secrecy + forward secrecy)
+ * Run: proverif -lib qrgaka_lib.pvl qrgaka_auth.pv
+ *
+ * Forward secrecy is modelled with phases: the whole session runs in phase 0, then in phase 1
+ * the attacker receives EVERY long-term secret (ML-KEM keys, PUF sealing keys, all shares, mask).
+ * The canaries are encrypted under SK during the session; they must stay secret in phase 1.
+ * Processes still in phase 0 cannot continue after the switch, so sessions are complete by then.
+ * Instead of a phase query, after the leak the attacker must hand back the canary; if it can,
+ * the event BrokenL/BrokenM fires. "not event(BrokenX)" = forward secrecy holds.
+ *)
+
+free idL: id.  free id1: id.  free id2: id.
+free e0: epoch.
+
+(* S2: key secrecy with forward secrecy (long-term keys leaked after the session) *)
+event BrokenL.
+event BrokenM.
+query event(BrokenL).
+query event(BrokenM).
+
+(* S1: injective agreement, leader <-> members *)
+query i: id, t: bitstring;
+  inj-event(MemberAccLeader(i, t)) ==> inj-event(LeaderM2(i, t)).
+query i: id, t: bitstring;
+  inj-event(LeaderAccMember(i, t)) ==> inj-event(MemberM3(i, t)).
+query i: id, t: bitstring, k: key;
+  inj-event(MemberAccKey(i, t, k)) ==> inj-event(LeaderM4(i, t, k)).
+
+(* sanity: the protocol can run to completion (these should be reachable = "false" for non-reachability) *)
+query i: id, t: bitstring, k: key; event(MemberAccKey(i, t, k)).
+query i: id, t: bitstring; event(LeaderAccMember(i, t)).
+
+process
+  new skL: skey; new sk1: skey; new sk2: skey;               (* ML-KEM static secret keys *)
+  new ksL: key;  new ks1: key;  new ks2: key;                (* PUF-derived sealing keys *)
+  new yL: share; new y1: share; new y2: share; new mu: share;
+  let sigL = madd(yL, mu) in
+  let sig1 = madd(y1, sigL) in
+  let sig2 = madd(y2, sigL) in
+  let kappa = chk((e0, rec(yL, y1, y2))) in                  (* ledger check value *)
+  let blobL = senc((yL, sigL), ksL, idb(idL)) in
+  let blob1 = senc((id1, sig1), ks1, idb(id1)) in
+  let blob2 = senc((id2, sig2), ks2, idb(id2)) in
+  out(c, (pk(skL), pk(sk1), pk(sk2), kappa));                (* public keys + ledger value *)
+  ( !Leader(idL, skL, ksL, blobL, e0, kappa, id1, pk(sk1), id2, pk(sk2))
+  | !Member(id1, sk1, pk(skL), idL, e0, blob1, ks1)
+  | !Member(id2, sk2, pk(skL), idL, e0, blob2, ks2)
+  | ( phase 1;
+      out(c, (skL, sk1, sk2, ksL, ks1, ks2, yL, y1, y2, mu, sigL, sig1, sig2));
+      ( in(c, x: bitstring); if x = canaryL then event BrokenL )
+    | ( in(c, y: bitstring); if y = canaryM then event BrokenM ) )
+  )

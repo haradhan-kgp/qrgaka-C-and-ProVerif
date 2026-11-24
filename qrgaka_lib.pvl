@@ -1,0 +1,157 @@
+(* qrgaka_lib.pvl -- symbolic model of QR-GAKA (library part: types, primitives, roles)
+ *
+ * Run with:
+ *   proverif -lib qrgaka_lib.pvl qrgaka_auth.pv      (S1, S2: authentication + forward secrecy)
+ *   proverif -lib qrgaka_lib.pvl qrgaka_leader.pv    (S3: leader-mandatory secrecy of S)
+ *
+ * Abstractions (state these in the paper):
+ *  - ML-KEM is an IND-CCA KEM: kss(pk,r) is the secret of encap(pk,r), recoverable only with sk.
+ *    Implicit rejection is abstracted: a ciphertext not of the form encap(pk(sk),r) makes decap fail
+ *    and the process halts (instead of yielding a pseudorandom key that later fails the MAC/AEAD).
+ *  - Every H_lbl is an independent random oracle (free function symbol, no equations).
+ *  - AES-GCM is symbolic AEAD with associated data.
+ *  - Shamir sharing is abstracted as a constructor rec(yL,y1,y2) with t = 3 (leader + 2 members):
+ *    S is derivable only from ALL three points. The information-theoretic Lemma 1 / Theorem 3
+ *    cannot be captured symbolically beyond this and stays a paper proof.
+ *  - The PUF: each drone has a private sealing key ks_x; sealed state is senc(...,ks_x,..) and can be
+ *    opened only inside the drone's own process. The ML-KEM secret key is passed to the process
+ *    already unsealed (sealing of sk_x is not re-modelled; it is modelled for the shares).
+ *  - The ledger is modelled as public read-only data (kappa) and the leader's public-key directory
+ *    as process parameters (so revocation = absence from the directory).
+ *)
+
+free c: channel.
+
+type skey.  type pkey.  type seed.  type ss.  type key.
+type id.    type share. type epoch. type nonce. type sec.
+
+const nil: bitstring.
+fun idb(id): bitstring.   (* identity as AEAD associated data (explicit encoding) *)
+
+(* ---- ML-KEM ---- *)
+fun pk(skey): pkey.
+fun encap(pkey, seed): bitstring.
+fun kss(pkey, seed): ss.
+reduc forall k: skey, r: seed; decap(encap(pk(k), r), k) = kss(pk(k), r).
+
+(* ---- AEAD (plaintext, key, associated data) ---- *)
+fun senc(bitstring, key, bitstring): bitstring.
+reduc forall m: bitstring, k: key, ad: bitstring; sdec(senc(m, k, ad), k, ad) = m.
+
+(* ---- hash/KDF family H_lbl ---- *)
+fun tr(bitstring): bitstring.
+fun hs(bitstring): key.
+fun tagf(key, bitstring): bitstring.
+fun ses(bitstring): key.
+fun up(key): key.
+fun dn(key): key.
+fun sidf(bitstring): bitstring.
+fun grp(bitstring): key.
+fun chk(bitstring): bitstring.
+
+(* ---- secret sharing layer ---- *)
+fun madd(share, share): share.
+reduc forall y: share, s: share; unmask(madd(y, s), s) = y.
+fun rec(share, share, share): sec.
+
+(* ---- events for authentication queries ---- *)
+event LeaderM2(id, bitstring).          (* leader sent M2 to member id, transcript tr2 *)
+event MemberAccLeader(id, bitstring).   (* member id verified tag_L *)
+event MemberM3(id, bitstring).          (* member id sent its share *)
+event LeaderAccMember(id, bitstring).   (* leader decrypted M3 of member id *)
+event LeaderM4(id, bitstring, key).     (* leader released SK to member id *)
+event MemberAccKey(id, bitstring, key). (* member id accepted SK *)
+
+free canaryL: bitstring [private].
+free canaryM: bitstring [private].
+
+(* ================================================================== Leader *)
+(* Waits for two members (t-1 = 2), runs the KEMTLS-style handshake with each,
+ * unmasks the shares, interpolates, checks kappa, releases SK = H_grp(S||z||sid). *)
+let Leader(idL: id, skl: skey, ksL: key, blobL: bitstring, e: epoch, kappa: bitstring,
+           idA: id, pkA: pkey, idB: id, pkB: pkey) =
+  let (yL: share, sigL: share) = sdec(blobL, ksL, idb(idL)) in          (* PUF unsealing *)
+  new esk: skey; let epk = pk(esk) in
+  new nuL: nonce;
+  let M0 = (idL, e, nuL, epk) in
+  let tr0 = tr(M0) in
+  out(c, M0);
+  (* ---- member A ---- *)
+  in(c, (=idA, nuA: nonce, ceA: bitstring, cLA: bitstring));
+  let keA = decap(ceA, esk) in
+  let kLA = decap(cLA, skl) in
+  let M1A = (idA, nuA, ceA, cLA) in
+  let tr1A = tr((tr0, M1A)) in
+  let hkA = hs((keA, kLA, tr1A)) in
+  new rA: seed;
+  let ciA = encap(pkA, rA) in
+  let kiA = kss(pkA, rA) in
+  let tr2A = tr((tr1A, ciA)) in
+  event LeaderM2(idA, tr2A);
+  out(c, (ciA, tagf(hkA, tr2A)));
+  let KA = ses((keA, kLA, kiA, tr2A)) in
+  let upA = up(KA) in
+  let dnA = dn(KA) in
+  in(c, m3A: bitstring);
+  let (=e, sgA: share) = sdec(m3A, upA, tr2A) in
+  event LeaderAccMember(idA, tr2A);
+  (* ---- member B ---- *)
+  in(c, (=idB, nuB: nonce, ceB: bitstring, cLB: bitstring));
+  let keB = decap(ceB, esk) in
+  let kLB = decap(cLB, skl) in
+  let M1B = (idB, nuB, ceB, cLB) in
+  let tr1B = tr((tr0, M1B)) in
+  let hkB = hs((keB, kLB, tr1B)) in
+  new rB: seed;
+  let ciB = encap(pkB, rB) in
+  let kiB = kss(pkB, rB) in
+  let tr2B = tr((tr1B, ciB)) in
+  event LeaderM2(idB, tr2B);
+  out(c, (ciB, tagf(hkB, tr2B)));
+  let KB = ses((keB, kLB, kiB, tr2B)) in
+  let upB = up(KB) in
+  let dnB = dn(KB) in
+  in(c, m3B: bitstring);
+  let (=e, sgB: share) = sdec(m3B, upB, tr2B) in
+  event LeaderAccMember(idB, tr2B);
+  (* ---- quorum: unmask, interpolate, ledger check ---- *)
+  let yA = unmask(sgA, sigL) in
+  let yB = unmask(sgB, sigL) in
+  let S = rec(yL, yA, yB) in
+  if chk((e, S)) = kappa then
+  new z: bitstring;
+  let sid = sidf((tr0, tr2A, tr2B)) in
+  let SK = grp((S, z, sid)) in
+  event LeaderM4(idA, tr2A, SK);
+  event LeaderM4(idB, tr2B, SK);
+  out(c, senc((SK, sid), dnA, tr2A));
+  out(c, senc((SK, sid), dnB, tr2B));
+  out(c, senc(canaryL, SK, nil)).
+
+(* ================================================================== Member *)
+let Member(idm: id, skm: skey, pkL: pkey, idL: id, e: epoch, blobm: bitstring, ksm: key) =
+  let (=idm, sigm: share) = sdec(blobm, ksm, idb(idm)) in               (* PUF unsealing *)
+  in(c, (=idL, =e, nuL: nonce, epk: pkey));
+  let M0 = (idL, e, nuL, epk) in
+  let tr0 = tr(M0) in
+  new nm: nonce; new r1: seed; new r2: seed;
+  let ce = encap(epk, r1) in  let ke = kss(epk, r1) in             (* ephemeral: forward secrecy *)
+  let cL = encap(pkL, r2) in  let kL = kss(pkL, r2) in             (* static: leader authentication *)
+  let M1 = (idm, nm, ce, cL) in
+  let tr1 = tr((tr0, M1)) in
+  let hk = hs((ke, kL, tr1)) in
+  out(c, M1);
+  in(c, (ci: bitstring, tg: bitstring));
+  let tr2 = tr((tr1, ci)) in
+  if tg = tagf(hk, tr2) then                                       (* leader authenticated first *)
+  event MemberAccLeader(idm, tr2);
+  let ki = decap(ci, skm) in
+  let K = ses((ke, kL, ki, tr2)) in
+  let upk = up(K) in
+  let dnk = dn(K) in
+  event MemberM3(idm, tr2);
+  out(c, senc((e, sigm), upk, tr2));
+  in(c, m4: bitstring);
+  let (SK: key, sid: bitstring) = sdec(m4, dnk, tr2) in
+  event MemberAccKey(idm, tr2, SK);
+  out(c, senc(canaryM, SK, nil)).

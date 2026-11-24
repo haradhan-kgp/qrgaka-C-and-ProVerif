@@ -1,0 +1,7 @@
+RESULT not event(BrokenL) is true.
+RESULT not event(BrokenM) is true.
+RESULT inj-event(MemberAccLeader(i,t)) ==> inj-event(LeaderM2(i,t)) is true.
+RESULT inj-event(LeaderAccMember(i,t)) ==> inj-event(MemberM3(i,t)) is true.
+RESULT inj-event(MemberAccKey(i,t,k)) ==> inj-event(LeaderM4(i,t,k)) is true.
+RESULT not event(MemberAccKey(i,t,k)) is false.
+RESULT not event(LeaderAccMember(i,t)) is false.

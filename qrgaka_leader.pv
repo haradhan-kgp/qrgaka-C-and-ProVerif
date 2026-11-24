@@ -1,0 +1,38 @@
+(* qrgaka_leader.pv -- S3 leader-mandatory secrecy of the quorum secret S
+ * Run: proverif -lib qrgaka_lib.pvl qrgaka_leader.pv
+ *
+ * Adversary: controls the network, has CORRUPTED ALL members (their ML-KEM keys, PUF sealing keys,
+ * shares sigma_i) and has read the leader's NON-VOLATILE memory (MemRead): only the PUF-sealed blob
+ * and the public ledger value. The leader's sk_L, sealing key, y_L and sigma_L are NOT given.
+ * The honest leader still runs sessions with the adversary-controlled members.
+ * Expected: S = rec(yL,y1,y2) stays secret.
+ * (No canary query here: the corrupted members legitimately take part in the session and
+ *  therefore learn SK; only the quorum secret S must stay hidden.)
+ *
+ * Negative control (uncomment the marked line): if the leader's (y_L, sigma_L) were stored in
+ * the clear (the naive design (ii) of the paper), a memory dump plus the members' shares yields S.
+ *)
+
+free idL: id.  free id1: id.  free id2: id.
+free e0: epoch.
+
+free yL: share [private].
+free y1: share [private].
+free y2: share [private].
+
+query attacker(rec(yL, y1, y2)).
+
+process
+  new skL: skey; new sk1: skey; new sk2: skey;
+  new ksL: key;  new ks1: key;  new ks2: key;
+  new mu: share;
+  let sigL = madd(yL, mu) in
+  let sig1 = madd(y1, sigL) in
+  let sig2 = madd(y2, sigL) in
+  let kappa = chk((e0, rec(yL, y1, y2))) in
+  let blobL = senc((yL, sigL), ksL, idb(idL)) in                  (* what MemRead(LU) returns *)
+  out(c, (pk(skL), pk(sk1), pk(sk2), kappa));
+  out(c, blobL);                                             (* MemRead(LU): sealed ciphertext only *)
+  out(c, (sk1, sk2, ks1, ks2, sig1, sig2));                  (* Corrupt(all members) *)
+  (* out(c, (yL, sigL));  <-- NEGATIVE CONTROL: unsealed (y_L, sigma_L); attacker(rec(yL,y1,y2)) becomes true *)
+  ( !Leader(idL, skL, ksL, blobL, e0, kappa, id1, pk(sk1), id2, pk(sk2)) )

@@ -1,0 +1,28 @@
+T1  honest session, n=9 t=5 (epoch 1)
+  [PASS] session completes
+  [PASS] all 8 members accepted
+  [PASS] every member derives the leader's SK
+  [PASS] total bytes == 3502*(n-1)+1228 == 29244
+T2  fresh session gives a fresh key (z and ephemeral key)
+  [PASS] SK differs from T1
+T3  fault tolerance: exactly t-1 = 4 members present
+  [PASS] session completes
+T4  quorum gate: only t-2 = 3 members present
+  [PASS] leader refuses to release SK
+T5  leader authentication: tampered tag_L
+  [PASS] members abort, nobody sends a share
+T6  stale-epoch share is dropped by the leader
+  [PASS] session ok, member 2 excluded
+T7  wrong share is caught by the ledger check value kappa_e
+  [PASS] session aborts with kappa mismatch
+T8  PUF binding: a cloned flash image on another PUF cannot unseal
+  [PASS] clone excluded, rest completes
+T9  revocation + epoch refresh (member 3 revoked, epoch 2)
+  [PASS] session ok without member 3
+  [PASS] old-epoch share useless
+T10 ledger commitment: substituted public key in the leader's directory
+  [PASS] member 4 rejected
+Benchmark: 200 full sessions, n=9 (native, software; NOT drone-class timing)
+  1.416 ms per session (7 members, includes PUF-unseal and all checks)
+
+ALL TESTS PASSED (0 failures)
